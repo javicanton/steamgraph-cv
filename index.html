@@ -64,6 +64,9 @@
   footer { margin-top: 22px; font-size: 12px; color: var(--ink-3); line-height: 1.6; }
   a { color: inherit; text-underline-offset: 2px; }
   footer a:hover { color: var(--ink); }
+  /* Modo incrustado (?embed=1): solo el stream graph */
+  .embed .page { padding: 0; max-width: none; }
+  .embed header, .embed .legend, .embed details, .embed footer { display: none; }
 </style>
 </head>
 <body>
@@ -269,7 +272,10 @@ const DATA = {
 <script>
 (function () {
   const SURFACE = "#f7f3ea", INK = "#2b2a28", INK2 = "#5d5a54", INK3 = "#8c877d", RULE = "#d9d2c2", NEUTRAL = "#9a958a";
-  let lang = (location.hash.replace("#", "") === "en") ? "en" : "es";
+  const params = new URLSearchParams(location.search);
+  const EMBED = params.has("embed"); // ?embed=1 muestra solo el stream graph (sin título, leyenda ni barras)
+  if (EMBED) document.documentElement.classList.add("embed");
+  let lang = (location.hash.replace("#", "") === "en" || params.get("lang") === "en") ? "en" : "es";
   const t = o => (o == null ? "" : (typeof o === "string" ? o : (o[lang] ?? o.es)));
   const byId = Object.fromEntries(DATA.capas.map(c => [c.id, c]));
   const colorOf = id => (id && byId[id]) ? byId[id].color : NEUTRAL;
@@ -496,11 +502,12 @@ const DATA = {
       });
       cursor += n * (BH + BG) + 26;
     }
-    bars(t(DATA.textos.centros), DATA.centros);
-    bars(t(DATA.textos.proyectos), DATA.proyectos);
-    bars(t(DATA.textos.competencias), DATA.competencias, true);
-
-    svg.attr("viewBox", `0 0 ${W} ${cursor - 10}`);
+    if (!EMBED) {
+      bars(t(DATA.textos.centros), DATA.centros);
+      bars(t(DATA.textos.proyectos), DATA.proyectos);
+      bars(t(DATA.textos.competencias), DATA.competencias, true);
+    }
+    svg.attr("viewBox", `0 0 ${W} ${EMBED ? axisY + 34 : cursor - 10}`);
 
     // --- leyenda ---
     const leg = d3.select("#legend"); leg.selectAll("*").remove();
