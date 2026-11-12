@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mi trayectoria · Javi Cantón-Correa</title>
+<meta name="description" content="Stream graph de la trayectoria académica y profesional de Javi Cantón-Correa.">
+<style>
+  :root {
+    --surface: #f7f3ea;
+    --ink: #2b2a28;
+    --ink-2: #5d5a54;
+    --ink-3: #8c877d;
+    --rule: #d9d2c2;
+    --accent: #c2385a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1320px; margin: 0 auto; padding: 32px 24px 48px; }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+  h1 {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-weight: 500; font-size: clamp(26px, 3.6vw, 44px); line-height: 1.1; margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  .sub { color: var(--ink-2); font-size: 15px; max-width: 760px; margin: 0; line-height: 1.45; }
+  .lang { display: flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; flex: none; }
+  .lang button {
+    font: inherit; font-size: 13px; padding: 6px 14px; border: 0; background: transparent;
+    color: var(--ink-2); cursor: pointer;
+  }
+  .lang button[aria-selected="true"] { background: var(--ink); color: var(--surface); }
+  .lang button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 22px 0 4px; font-size: 13px; }
+  .legend .group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  .legend .gname { color: var(--ink-3); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .legend .item { display: inline-flex; align-items: center; gap: 6px; cursor: default; color: var(--ink-2); }
+  .legend .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .scroll { overflow-x: auto; position: relative; }
+  svg { display: block; width: 100%; min-width: 980px; height: auto; }
+  svg text { font-family: inherit; }
+  .layer { transition: opacity .15s; }
+  .dim .layer:not(.on) { opacity: .22; }
+  .bar-link:hover text { text-decoration: underline; }
+  .tooltip {
+    position: absolute; pointer-events: none; background: #fffdf8; border: 1px solid var(--rule);
+    border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.4; max-width: 300px;
+    box-shadow: 0 6px 20px rgba(60, 50, 30, .12); opacity: 0; transition: opacity .1s; z-index: 5;
+  }
+  .tooltip.show { opacity: 1; }
+  .tooltip .tt-title { font-weight: 600; display: flex; gap: 8px; align-items: center; }
+  .tooltip .tt-sw { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .tooltip .tt-meta { color: var(--ink-3); font-size: 12px; margin: 2px 0 4px; }
+  .tooltip .tt-proj { color: var(--ink-2); font-size: 12px; margin-top: 6px; }
+  details { margin-top: 20px; font-size: 13px; color: var(--ink-2); }
+  summary { cursor: pointer; }
+  table { border-collapse: collapse; margin-top: 10px; width: 100%; max-width: 900px; }
+  th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
+  footer { margin-top: 22px; font-size: 12px; color: var(--ink-3); line-height: 1.6; }
+  a { color: inherit; text-underline-offset: 2px; }
+  footer a:hover { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <h1 id="title"></h1>
+      <p class="sub" id="subtitle"></p>
+    </div>
+    <div class="lang" role="tablist" aria-label="Idioma / Language">
+      <button role="tab" data-lang="es">Español</button>
+      <button role="tab" data-lang="en">English</button>
+    </div>
+  </header>
+  <div class="legend" id="legend"></div>
+  <div class="scroll" id="scroll">
+    <svg id="chart" role="img"></svg>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+  <details>
+    <summary id="table-summary"></summary>
+    <div id="table"></div>
+  </details>
+  <footer id="footer"></footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+
+<!-- ============================================================
+     DATOS. Todo lo editable está en este bloque.
+     - "valores": peso aproximado (0 a 10) por año. 10 = jornada completa.
+       Entre años se interpola; fuera de [desde, hasta] vale 0.
+     - Los años admiten decimales (2020.9 = finales de 2020).
+     - Los textos llevan versión { es, en }.
+     ============================================================ -->
+<script>
+const DATA = {
+  dominio: [2005, 2027],
+  hoy: 2026.87,
+
+  textos: {
+    titulo: { es: "Mi trayectoria: de la sociología a la desinformación y los datos",
+              en: "My career so far: from sociology to disinformation and data" },
+    subtitulo: { es: "En qué he invertido mi tiempo profesional desde 2005: temas de investigación, docencia, práctica profesional y formación. Las anchuras son una estimación personal aproximada.",
+                 en: "Where my professional time has gone since 2005: research topics, teaching, professional practice and training. Stream widths are a rough personal estimate." },
+    ejeY: { es: "Tiempo dedicado (estimación)", en: "Time spent (rough estimate)" },
+    hoy: { es: "hoy", en: "today" },
+    centros: { es: "Dónde", en: "Where" },
+    proyectos: { es: "Proyectos de I+D y transferencia", en: "R&D and knowledge-transfer projects" },
+    competencias: { es: "Competencias", en: "Skills" },
+    tabla: { es: "Ver los datos en tabla", en: "View data as a table" },
+    thCapa: { es: "Capa", en: "Stream" }, thGrupo: { es: "Grupo", en: "Group" },
+    thPeriodo: { es: "Periodo", en: "Period" }, thDesc: { es: "Descripción", en: "Description" },
+    proyRel: { es: "Proyectos", en: "Projects" },
+    pie: { es: 'Javi Cantón-Correa · <a href="https://javiercanton.com/cv/">CV completo</a> · <a href="https://scholar.google.com/citations?user=UH2ITjIAAAAJ&hl=es">Google Scholar</a> · <a href="https://orcid.org/0000-0002-8466-1679">ORCID</a> · <a href="https://github.com/Javicanton">GitHub</a><br>Formato inspirado en el <a href="https://x.com/AlliTorban/status/1490400095191379976">career stream graph de Alli Torban</a>. Hecho con D3.',
+           en: 'Javi Cantón-Correa · <a href="https://javiercanton.com/cv/">Full CV (in Spanish)</a> · <a href="https://scholar.google.com/citations?user=UH2ITjIAAAAJ&hl=en">Google Scholar</a> · <a href="https://orcid.org/0000-0002-8466-1679">ORCID</a> · <a href="https://github.com/Javicanton">GitHub</a><br>Format based on <a href="https://x.com/AlliTorban/status/1490400095191379976">Alli Torban\'s career stream graph</a>. Built with D3.' }
+  },
+
+  grupos: {
+    investigacion: { es: "Investigación", en: "Research" },
+    profesional:   { es: "Práctica profesional", en: "Professional practice" },
+    docencia:      { es: "Docencia y gestión", en: "Teaching and management" },
+    formacion:     { es: "Formación", en: "Training" }
+  },
+
+  // Orden = de abajo arriba en el gráfico.
+  capas: [
+    { id: "formacion", grupo: "formacion", color: "#d4c29c",
+      nombre: { es: "Formación", en: "Training" }, corto: { es: "Formación", en: "Training" },
+      desc: { es: "Licenciaturas, másteres y cursos.", en: "Degrees, master's programmes and courses." },
+      desde: 2005, hasta: null,
+      valores: { 2005: 6, 2006: 6, 2007: 4, 2008: 0.5, 2009: 2.5, 2010: 2.5, 2011: 2, 2012: 0.3, 2014: 0.5, 2015: 1.5, 2016: 1, 2017: 0.3, 2019: 0.8, 2020: 0.8, 2021: 2, 2022: 2, 2023: 0.6, 2024: 0.25, 2026: 0.25 } },
+    { id: "tesis", grupo: "formacion", color: "#a87a2c",
+      nombre: { es: "Tesis doctoral", en: "Doctoral thesis" }, corto: { es: "Tesis", en: "Thesis" },
+      desc: { es: "Doctorado en Ciencias Sociales (UGR): la imagen de Granada en Instagram.", en: "PhD in Social Sciences (University of Granada): the image of Granada on Instagram." },
+      desde: 2014, hasta: 2019.8,
+      valores: { 2014: 1.5, 2015: 2.5, 2016: 2.5, 2017: 3, 2018: 3.5, 2019: 3 } },
+    { id: "exclusion", grupo: "investigacion", color: "#5b7f8c",
+      nombre: { es: "Exclusión social e inmigración", en: "Social exclusion and migration" }, corto: { es: "Exclusión social", en: "Social exclusion" },
+      desc: { es: "Investigador social en la UGR y PDI en la Universidad de Jaén.", en: "Social researcher at the University of Granada, then lecturer and researcher at the University of Jaén." },
+      desde: 2006.3, hasta: 2013.6,
+      valores: { 2006: 2, 2007: 6, 2008: 7, 2009: 4, 2010: 4, 2011: 3, 2012: 2.5, 2013: 1.5 } },
+    { id: "formador", grupo: "profesional", color: "#8fb3a8",
+      nombre: { es: "Formador en tecnología y comunicación", en: "Digital skills trainer, communication" }, corto: { es: "Formador TIC", en: "ICT trainer" },
+      desc: { es: "Andalucía Compromiso Digital, red.es, Euroformac y gabinete de prensa del Ayuntamiento de Caniles.", en: "Andalucía Compromiso Digital, red.es, Euroformac and the press office of Caniles town council." },
+      desde: 2014.9, hasta: 2016.1,
+      valores: { 2014: 4, 2015: 5, 2016: 4 } },
+    { id: "medialab", grupo: "profesional", color: "#3f8f84",
+      nombre: { es: "Medialab UGR", en: "Medialab UGR" }, corto: { es: "Medialab UGR", en: "Medialab UGR" },
+      desc: { es: "Comunicación audiovisual, diseño, formación e investigación. A tiempo completo, con docencia y tesis en paralelo.", en: "Audiovisual communication, design, training and research. Full time, alongside teaching and the thesis." },
+      url: "https://medialab.ugr.es",
+      desde: 2016.1, hasta: 2020.95,
+      valores: { 2016: 5, 2017: 6, 2018: 6, 2019: 6, 2020: 5.5 } },
+    { id: "rtve", grupo: "profesional", color: "#e07a3f",
+      nombre: { es: "VerificaRTVE", en: "VerificaRTVE" }, corto: { es: "RTVE", en: "RTVE" },
+      desc: { es: "Periodista de investigación y verificador en RTVE.es, a tiempo completo.", en: "Investigative journalist and fact-checker at RTVE.es, full time." },
+      url: "https://www.rtve.es/noticias/verificartve/",
+      desde: 2020.9, hasta: 2022,
+      valores: { 2020: 7, 2021: 7 } },
+    { id: "desinfo", grupo: "investigacion", color: "#c2385a",
+      nombre: { es: "Desinformación, fact-checking e IA", en: "Disinformation, fact-checking and AI" }, corto: { es: "Desinformación", en: "Disinformation" },
+      desc: { es: "De preparar materiales docentes (2018) a VerificaRTVE, IBERIFIER y MonitorIA (desinformación aplicada).", en: "From preparing course materials (2018) to VerificaRTVE, IBERIFIER and MonitorIA (applied disinformation research)." },
+      proyectos: "IBERIFIER, U-MIND, XAI-DisInfodemics, UDDOT, IBERIFIER Plus, MonitorIA",
+      desde: 2018, hasta: null,
+      valores: { 2018: 0.4, 2019: 0.9, 2020: 1.2, 2021: 1.5, 2022: 3.5, 2023: 4, 2024: 3.5, 2025: 3.8, 2026: 3.3 } },
+    { id: "manosfera", grupo: "investigacion", color: "#6d1f4f",
+      nombre: { es: "Manosfera y cibermisoginia", en: "Manosphere and cyber-misogyny" }, corto: { es: "Manosfera", en: "Manosphere" },
+      desc: { es: "Línea abierta en 2026: discursos digitales misóginos e IA generativa.", en: "Line opened in 2026: misogynistic online discourse and generative AI." },
+      desde: 2025.9, hasta: null,
+      valores: { 2026: 1.3 } },
+    { id: "dataviz", grupo: "investigacion", color: "#e2b23a",
+      nombre: { es: "Visualización de datos", en: "Data visualization" }, corto: { es: "Dataviz", en: "Dataviz" },
+      desc: { es: "Investigación, talleres y divulgación sobre visualización, periodismo de datos y pensamiento visual.", en: "Research, workshops and outreach on visualization, data journalism and visual thinking." },
+      desde: 2016, hasta: null,
+      valores: { 2016: 0.8, 2017: 1.2, 2020: 1.3, 2021: 0.8, 2022: 1.2, 2023: 1, 2024: 1.2, 2025: 1.6, 2026: 2.2 } },
+    { id: "transmedia", grupo: "investigacion", color: "#8a6fb0",
+      nombre: { es: "Narrativas transmedia y cultura visual", en: "Transmedia storytelling and visual culture" }, corto: { es: "Transmedia", en: "Transmedia" },
+      desc: { es: "Grupo Nar-Trans (UGR): transmedialización, ficción y no ficción.", en: "Nar-Trans group (University of Granada): transmedia adaptation, fiction and non-fiction." },
+      proyectos: "Nar-Trans, Nar-Trans 2, FicTrans",
+      desde: 2014, hasta: null,
+      valores: { 2014: 0.5, 2015: 1, 2017: 1.2, 2019: 1, 2020: 0.8, 2021: 0.3, 2022: 0.6, 2024: 0.6, 2025: 0.4, 2026: 0.3 } },
+    { id: "docencia", grupo: "docencia", color: "#1f4e5f",
+      nombre: { es: "Docencia universitaria", en: "University teaching" }, corto: { es: "Docencia", en: "Teaching" },
+      desc: { es: "Universidad de Jaén (2009-2013), UNIR (desde 2011), UOC (desde 2020), FUdG (2020-2022), UAH (2021-2023) y UI1 (desde 2022).", en: "University of Jaén (2009-2013), UNIR (since 2011), UOC (since 2020), FUdG (2020-2022), UAH (2021-2023) and UI1 (since 2022)." },
+      desde: 2009.25, hasta: null,
+      valores: { 2009: 3, 2010: 4.5, 2011: 5, 2012: 5.5, 2013: 5, 2014: 3.5, 2015: 2, 2017: 2, 2018: 2.2, 2019: 2.5, 2020: 3, 2021: 3, 2022: 4, 2023: 4.5, 2024: 5, 2025: 4.5, 2026: 4.5 } },
+    // SUPUESTO: falta confirmar desde cuándo diriges el grado y el máster.
+    { id: "gestion", grupo: "docencia", color: "#7a8691",
+      nombre: { es: "Gestión académica", en: "Academic management" }, corto: { es: "Gestión", en: "Management" },
+      desc: { es: "Dirección del Grado en Sociología y del Máster en Métodos y Técnicas de Investigación Social Aplicada (UNIR).", en: "Director of the BA in Sociology and of the Master's in Applied Social Research Methods (UNIR)." },
+      desde: 2024, hasta: null,
+      valores: { 2024: 0.8, 2025: 1.5, 2026: 1.8 } }
+  ],
+
+  // Anotaciones bajo el gráfico (salen de la capa de formación).
+  titulos: [
+    { x: 2006.5, texto: { es: "Lic. en Sociología (UGR), 2006", en: "BA in Sociology (Granada), 2006" } },
+    { x: 2007.6, texto: { es: "Máster en Problemas Sociales y CAP, 2007", en: "Master's in Social Problems + teaching certificate, 2007" } },
+    { x: 2011.4, texto: { es: "Lic. en Comunicación Audiovisual (UGR), 2009-2011", en: "BA in Audiovisual Communication (Granada), 2009-2011" } },
+    { x: 2015.5, texto: { es: "Máster en Diseño Gráfico, 2015", en: "Master's in Graphic Design, 2015" } },
+    { x: 2019.6, capa: "tesis", texto: { es: "Doctor en Ciencias Sociales (UGR), 2019", en: "PhD in Social Sciences (Granada), 2019" }, url: "https://digibug.ugr.es/handle/10481/56491" },
+    { x: 2022.4, texto: { es: "Máster en Inteligencia Artificial (UNIR), 2021-22", en: "Master's in Artificial Intelligence (UNIR), 2021-22" } }
+  ],
+
+  // Hitos sobre el gráfico.
+  hitos: [
+    { x: 2011.75, texto: { es: "Empiezo en UNIR", en: "Joined UNIR" }, url: "https://www.unir.net/" },
+    { x: 2020.3, texto: { es: "Acreditación de Ayudante Doctor", en: "Accredited as Assistant Professor (ANECA)" } },
+    { x: 2020.8, texto: { es: "Accésit ATIC a la mejor tesis en comunicación", en: "ATIC runner-up award, best communication thesis" } },
+    { x: 2024.5, texto: { es: "Acreditación a Contratado Doctor y sexenio", en: "Accredited as Associate Professor (ANECA), first research sexenio" } },
+    { x: 2025.1, texto: { es: "IP de MonitorIA", en: "PI of MonitorIA" }, url: "https://monitoria.org/" }
+  ],
+
+  // Barras bajo el eje. "tipo" toma el color de una capa.
+  centros: [
+    { nombre: { es: "Ropero (dependiente)", en: "Ropero (shop assistant)" }, desde: 2005, hasta: 2007, tipo: null },
+    { nombre: { es: "UGR (investigador social)", en: "Univ. of Granada (social researcher)" }, desde: 2007, hasta: 2009, tipo: "exclusion" },
+    { nombre: { es: "Universidad de Jaén", en: "University of Jaén" }, desde: 2009.25, hasta: 2013.25, tipo: "docencia" },
+    { nombre: "UNIR", desde: 2011.75, hasta: null, tipo: "docencia", url: "https://www.unir.net/" },
+    { nombre: "Medialab UGR", desde: 2016.1, hasta: 2020.95, tipo: "medialab", url: "https://medialab.ugr.es" },
+    { nombre: "FUdG", desde: 2020, hasta: 2023, tipo: "docencia" },
+    { nombre: "UOC", desde: 2020.67, hasta: null, tipo: "docencia", url: "https://www.uoc.edu/portal/es/index.html" },
+    { nombre: "VerificaRTVE", desde: 2020.92, hasta: 2022, tipo: "rtve", url: "https://www.rtve.es/noticias/verificartve/" },
+    { nombre: { es: "UAH (Alcalá)", en: "UAH (Alcalá)" }, desde: 2021.75, hasta: 2023.55, tipo: "docencia", url: "https://www.uah.es/es/estudios/estudios-oficiales/grados/Master-Propio-en-Periodismo-de-Datos-y-Visualizacion/#presentacion" },
+    { nombre: { es: "UGR (IBERIFIER)", en: "Granada (IBERIFIER)" }, desde: 2022.35, hasta: 2024, tipo: "desinfo", url: "https://iberifier.eu/" },
+    { nombre: "UI1", desde: 2022.67, hasta: null, tipo: "docencia", url: "https://www.ui1.es" }
+  ],
+
+  // Competencias: desde el año en que empiezas a usarlas. "destacada" la resalta.
+  competencias: [
+    { nombre: { es: "Investigación social cuantitativa y cualitativa (SPSS, ATLAS.ti)", en: "Quantitative and qualitative social research (SPSS, ATLAS.ti)" }, desde: 2006, hasta: null, tipo: null },
+    { nombre: { es: "Radio, producción audiovisual y podcast", en: "Radio, audiovisual production and podcasting" }, desde: 2006, hasta: null, tipo: null },
+    { nombre: { es: "Diseño gráfico e infografía (Adobe)", en: "Graphic design and infographics (Adobe)" }, desde: 2015, hasta: null, tipo: null },
+    { nombre: { es: "Visualización de datos (Tableau, Flourish, Datawrapper)", en: "Data visualization (Tableau, Flourish, Datawrapper)" }, desde: 2016, hasta: null, tipo: "dataviz", destacada: true },
+    { nombre: { es: "Pensamiento visual y sketchnoting", en: "Visual thinking and sketchnoting" }, desde: 2017, hasta: null, tipo: null },
+    { nombre: { es: "R y Python para análisis de datos", en: "R and Python for data analysis" }, desde: 2019, hasta: null, tipo: null },
+    { nombre: { es: "Verificación digital y OSINT", en: "Digital verification and OSINT" }, desde: 2020, hasta: null, tipo: null },
+    { nombre: { es: "IA, PLN y minería de texto", en: "AI, NLP and text mining" }, desde: 2021, hasta: null, tipo: null },
+    { nombre: { es: "Programación asistida por IA (D3, web)", en: "AI-assisted coding (D3, web)" }, desde: 2025, hasta: null, tipo: null }
+  ],
+
+  // "hasta" es exclusivo: un proyecto 2014-2017 va de 2014 a 2018.
+  proyectos: [
+    { nombre: { es: "Bienestar social e inmigración", en: "Welfare and immigration" }, desde: 2006, hasta: 2010, tipo: "exclusion" },
+    { nombre: { es: "Nueva pobreza y exclusión social", en: "New poverty and social exclusion" }, desde: 2008, hasta: 2012, tipo: "exclusion" },
+    { nombre: "Nar-Trans", desde: 2014, hasta: 2018, tipo: "transmedia", url: "https://nar-trans.com/" },
+    { nombre: "Knowmetrics", desde: 2016, hasta: 2019, tipo: "medialab" },
+    { nombre: "Nar-Trans 2", desde: 2018, hasta: 2021, tipo: "transmedia", url: "https://nar-trans.com/" },
+    { nombre: "PAgES", desde: 2018, hasta: 2023, tipo: "medialab", url: "https://pages-project.ly/en/" },
+    { nombre: "IBERIFIER", desde: 2020, hasta: 2025, tipo: "desinfo", url: "https://iberifier.eu/" },
+    { nombre: "U-MIND", desde: 2022, hasta: 2025, tipo: "desinfo" },
+    { nombre: "FicTrans", desde: 2022, hasta: 2026, tipo: "transmedia", url: "https://nar-trans.com/proyecto/" },
+    { nombre: "XAI-DisInfodemics", desde: 2024, hasta: 2025, tipo: "desinfo", url: "https://otri.ugr.es/imasd-colaborativa/gestion-proyectos/proyectos/xai-disinfodemics" },
+    { nombre: "UDDOT", desde: 2024, hasta: 2025, tipo: "desinfo", url: "https://gulbenkian.pt/emifund/projects/understanding-disinformation-dynamics-on-telegram-uddot/" },
+    { nombre: "IBERIFIER Plus", desde: 2024, hasta: 2027, tipo: "desinfo", url: "https://iberifier.eu/" },
+    { nombre: "MonitorIA", desde: 2025, hasta: 2027, tipo: "desinfo", url: "https://monitoria.org/" },
+    { nombre: { es: "Innovación audiovisual para la divulgación científica", en: "Audiovisual innovation for science communication" }, desde: 2026, hasta: 2027, tipo: "medialab" }
+  ]
+};
+</script>
+
+<script>
+(function () {
+  const SURFACE = "#f7f3ea", INK = "#2b2a28", INK2 = "#5d5a54", INK3 = "#8c877d", RULE = "#d9d2c2", NEUTRAL = "#9a958a";
+  let lang = (location.hash.replace("#", "") === "en") ? "en" : "es";
+  const t = o => (o == null ? "" : (typeof o === "string" ? o : (o[lang] ?? o.es)));
+  const byId = Object.fromEntries(DATA.capas.map(c => [c.id, c]));
+  const colorOf = id => (id && byId[id]) ? byId[id].color : NEUTRAL;
+
+  const ctx = document.createElement("canvas").getContext("2d");
+  const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  function textW(s, size, weight) { ctx.font = `${weight || 400} ${size}px ${FONT}`; return ctx.measureText(s).width; }
+  function lum(hex) {
+    const c = d3.color(hex); const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+  }
+
+  // ---------- Serie por capa ----------
+  const [X0, X1] = DATA.dominio, END = DATA.hoy, STEP = 0.05;
+  const xs = d3.range(X0, END + STEP / 2, STEP);
+  const smooth = u => { u = Math.max(0, Math.min(1, u)); return u * u * (3 - 2 * u); };
+  function valueAt(c, x) {
+    const ks = Object.keys(c.valores).map(Number).sort((a, b) => a - b);
+    const px = ks.map(k => k + 0.5);
+    let v;
+    if (x <= px[0]) v = c.valores[ks[0]];
+    else if (x >= px[px.length - 1]) v = c.valores[ks[ks.length - 1]];
+    else { const i = d3.bisectRight(px, x) - 1; const u = (x - px[i]) / (px[i + 1] - px[i]); v = c.valores[ks[i]] * (1 - u) + c.valores[ks[i + 1]] * u; }
+    return v;
+  }
+  function envelope(c, x) {
+    const R = 0.8;
+    // rampas centradas en la fecha: un relevo (acaba una capa, empieza otra) no deja hueco
+    let env = (c.desde > X0) ? smooth((x - c.desde) / R + 0.5) : 1;
+    if (c.hasta != null) env *= smooth((c.hasta - x) / R + 0.5);
+    return env;
+  }
+  function gauss(arr, sigma) {
+    const r = Math.ceil(sigma * 3), k = d3.range(-r, r + 1).map(i => Math.exp(-(i * i) / (2 * sigma * sigma)));
+    return arr.map((_, i) => { let s = 0, w = 0; for (let j = -r; j <= r; j++) { const q = Math.min(arr.length - 1, Math.max(0, i + j)); s += arr[q] * k[j + r]; w += k[j + r]; } return s / w; });
+  }
+  const series = {};
+  DATA.capas.forEach(c => {
+    let raw = xs.map(x => valueAt(c, x));
+    raw = gauss(raw, 0.3 / STEP);
+    // la envolvente se aplica tras suavizar: la capa vale exactamente 0 fuera de su periodo
+    series[c.id] = raw.map((v, i) => v * envelope(c, xs[i]));
+  });
+  const rows = xs.map((x, i) => { const r = { x }; DATA.capas.forEach(c => r[c.id] = series[c.id][i]); return r; });
+  const stack = d3.stack().keys(DATA.capas.map(c => c.id)).offset(d3.stackOffsetSilhouette)(rows);
+
+  // ---------- Empaquetado de etiquetas en niveles ----------
+  function assignLevels(items) { // texto a la derecha de su línea guía; se coloca de derecha a izquierda
+    const levels = [];
+    items.slice().sort((p, q) => q.px - p.px).forEach(it => {
+      let L = 0;
+      for (;; L++) {
+        const row = levels[L] || [];
+        const overlap = row.some(b => it.x < b.x1 + 10 && it.x + it.w > b.x0 - 10);
+        const crossed = levels.slice(L + 1).some(r => r.some(b => b.px > it.x - 6 && b.px < it.x + it.w + 6));
+        if (!overlap && !crossed) break;
+      }
+      (levels[L] = levels[L] || []).push({ x0: it.x, x1: it.x + it.w, px: it.px });
+      it.level = L;
+    });
+    return levels.length;
+  }
+  function packLanes(items) { // items: {x0, x1}
+    const lanes = [];
+    items.forEach(it => {
+      let L = 0;
+      while (lanes[L] != null && lanes[L] > it.x0 - 8) L++;
+      lanes[L] = it.x1; it.lane = L;
+    });
+    return lanes.length;
+  }
+
+  function render() {
+    document.documentElement.lang = lang;
+    document.title = (lang === "es" ? "Mi trayectoria" : "My career") + " · Javi Cantón-Correa";
+    d3.select("#title").text(t(DATA.textos.titulo));
+    d3.select("#subtitle").text(t(DATA.textos.subtitulo));
+    d3.selectAll(".lang button").attr("aria-selected", function () { return this.dataset.lang === lang; });
+    d3.select("#footer").html(t(DATA.textos.pie));
+    d3.select("#table-summary").text(t(DATA.textos.tabla));
+
+    const W = 1280, M = { l: 30, r: 210 };
+    const x = d3.scaleLinear().domain([X0, X1]).range([M.l, W - M.r]);
+    const xEnd = x(END);
+    const svg = d3.select("#chart"); svg.selectAll("*").remove();
+    svg.attr("aria-label", t(DATA.textos.titulo));
+
+    // --- niveles de hitos (arriba) y títulos (abajo) ---
+    const FS = 12, ROW = 17;
+    const hitos = DATA.hitos.map(h => ({ ...h, px: x(h.x), label: t(h.texto) + (h.url ? " ↗" : "") })).sort((a, b) => a.px - b.px);
+    hitos.forEach(h => { h.w = textW(h.label, FS, 600); h.x = h.px + 7; });
+    hitos.forEach(h => { if (h.x + h.w > W - 8) h.x = W - 8 - h.w; });
+    const nTop = assignLevels(hitos.map(h => h));
+    const titulos = DATA.titulos.map(d => ({ ...d, px: x(d.x), label: t(d.texto) + (d.url ? " ↗" : "") })).sort((a, b) => a.px - b.px);
+    titulos.forEach(d => { d.w = textW(d.label, FS); d.x = d.px + 7; });
+    const nBot = assignLevels(titulos);
+
+    const streamTop = 14 + nTop * ROW + 18, SH = 400, streamBot = streamTop + SH;
+    const yExt = [d3.min(stack, s => d3.min(s, d => d[0])), d3.max(stack, s => d3.max(s, d => d[1]))];
+    const y = d3.scaleLinear().domain(yExt).range([streamBot, streamTop]);
+    const idx = px => Math.max(0, Math.min(xs.length - 1, Math.round((x.invert(px) - X0) / STEP)));
+    const topAt = px => y(stack[stack.length - 1][idx(px)][1]);
+    const botAt = (px, id) => { const s = id ? stack.find(s => s.key === id) : stack[0]; return y(s[idx(px)][0]); };
+
+    // --- eje Y (rótulo) ---
+    svg.append("text").attr("transform", `translate(12,${(streamTop + streamBot) / 2}) rotate(-90)`)
+      .attr("text-anchor", "middle").attr("font-size", 11).attr("fill", INK3).text(t(DATA.textos.ejeY));
+
+    // --- capas ---
+    const area = d3.area().defined(d => d[1] - d[0] > 0.004)
+      .x(d => x(d.data.x)).y0(d => y(d[0])).y1(d => y(d[1])).curve(d3.curveMonotoneX);
+    const gLayers = svg.append("g").attr("class", "layers");
+    const tip = d3.select("#tooltip"), scroll = document.getElementById("scroll");
+    function period(c) {
+      const a = Math.floor(c.desde + 0.05), b = c.hasta == null ? t(DATA.textos.hoy) : Math.floor(c.hasta - 0.05);
+      return a === b ? `${a}` : `${a} – ${b}`;
+    }
+    function showTip(ev, c) {
+      const yr = Math.floor(x.invert(d3.pointer(ev, svg.node())[0]));
+      tip.html(`<div class="tt-title"><span class="tt-sw" style="background:${c.color}"></span>${t(c.nombre)}</div>
+        <div class="tt-meta">${t(DATA.grupos[c.grupo])} · ${period(c)}</div>
+        <div>${t(c.desc)}</div>${c.proyectos ? `<div class="tt-proj">${t(DATA.textos.proyRel)}: ${c.proyectos}</div>` : ""}`);
+      const r = scroll.getBoundingClientRect();
+      let left = ev.clientX - r.left + scroll.scrollLeft + 14, top = ev.clientY - r.top + 14;
+      const tw = tip.node().offsetWidth;
+      if (ev.clientX + tw + 30 > window.innerWidth) left -= tw + 28;
+      tip.style("left", left + "px").style("top", top + "px").classed("show", true);
+    }
+    function highlight(id) { svg.classed("dim", !!id); svg.selectAll(".layer").classed("on", function () { return this.dataset.id === id; }); }
+    gLayers.selectAll("path").data(stack).join("path")
+      .attr("class", "layer").attr("data-id", s => s.key)
+      .attr("d", area).attr("fill", s => byId[s.key].color)
+      .attr("stroke", SURFACE).attr("stroke-width", 1.4).attr("stroke-linejoin", "round")
+      .on("mousemove", (ev, s) => { highlight(s.key); showTip(ev, byId[s.key]); })
+      .on("mouseleave", () => { highlight(null); tip.classed("show", false); });
+
+    // --- etiquetas directas ---
+    const gLab = svg.append("g").attr("pointer-events", "none");
+    const endLabels = [];
+    stack.forEach(s => {
+      const c = byId[s.key];
+      const th = s.map(d => y(d[0]) - y(d[1]));
+      let placed = false;
+      for (const cand of [{ txt: t(c.nombre), fs: 13 }, { txt: t(c.nombre), fs: 11.5 }, { txt: t(c.corto), fs: 12 }, { txt: t(c.corto), fs: 10.5 }]) {
+        const w = textW(cand.txt, cand.fs, 600) + 14, half = Math.ceil((w / 2) / (x(X0 + STEP) - x(X0)));
+        let best = -1, bestV = 0, bestC = 0;
+        for (let i = half; i < s.length - half; i++) {
+          // banda horizontal común a toda la ventana: el texto debe caber entero dentro de la capa
+          let lo = -Infinity, hi = Infinity;
+          for (let j = i - half; j <= i + half; j++) { const a = y(s[j][1]), b = y(s[j][0]); if (a > lo) lo = a; if (b < hi) hi = b; }
+          if (hi - lo > bestV) { bestV = hi - lo; best = i; bestC = (lo + hi) / 2; }
+        }
+        if (best >= 0 && bestV >= cand.fs + 6) {
+          gLab.append("text").attr("x", x(xs[best])).attr("y", bestC).attr("dy", "0.35em").attr("text-anchor", "middle")
+            .attr("font-size", cand.fs).attr("font-weight", 600)
+            .attr("fill", lum(c.color) > 0.36 ? INK : "#fff").text(cand.txt);
+          placed = true; break;
+        }
+      }
+      const last = s[s.length - 1], thEnd = y(last[0]) - y(last[1]);
+      if (!placed && thEnd > 1.5) endLabels.push({ c, y0: (y(last[0]) + y(last[1])) / 2 });
+    });
+    // etiquetas al final (capas finas vivas hoy)
+    endLabels.sort((a, b) => a.y0 - b.y0); endLabels.forEach(e => e.y = e.y0);
+    for (let k = 0; k < 20; k++) for (let i = 1; i < endLabels.length; i++) {
+      const gap = endLabels[i].y - endLabels[i - 1].y;
+      if (gap < 15) { const d = (15 - gap) / 2; endLabels[i - 1].y -= d; endLabels[i].y += d; }
+    }
+    endLabels.forEach(e => {
+      gLab.append("path").attr("d", `M${xEnd + 2},${e.y0} L${xEnd + 12},${e.y} H${xEnd + 16}`).attr("fill", "none").attr("stroke", e.c.color).attr("stroke-width", 1.5);
+      gLab.append("text").attr("x", xEnd + 20).attr("y", e.y).attr("dy", "0.35em").attr("font-size", 12).attr("fill", INK).text(t(e.c.nombre));
+    });
+
+    // --- hitos (arriba) ---
+    const gH = svg.append("g");
+    hitos.forEach(h => {
+      const ty = streamTop - 18 - h.level * ROW, cy = topAt(h.px);
+      gH.append("path").attr("d", `M${h.px},${cy} V${ty + 5}`).attr("stroke", INK3).attr("stroke-width", 1).attr("fill", "none");
+      gH.append("circle").attr("cx", h.px).attr("cy", cy).attr("r", 5).attr("fill", "#c2385a").attr("stroke", SURFACE).attr("stroke-width", 2);
+      const a = h.url ? gH.append("a").attr("href", h.url).attr("target", "_blank").attr("rel", "noopener").attr("class", "bar-link") : gH;
+      a.append("text").attr("x", h.x).attr("y", ty).attr("font-size", FS).attr("font-weight", 600).attr("fill", INK).text(h.label);
+    });
+
+    // --- títulos (abajo) ---
+    const gT = svg.append("g");
+    const botZone = streamBot + 20;
+    titulos.forEach(d => {
+      const ty = botZone + d.level * ROW, cy = botAt(d.px, d.capa) ;
+      gT.append("path").attr("d", `M${d.px},${cy + 1} V${ty + 3}`).attr("stroke", INK3).attr("stroke-width", 1).attr("fill", "none");
+      const a = d.url ? gT.append("a").attr("href", d.url).attr("target", "_blank").attr("rel", "noopener").attr("class", "bar-link") : gT;
+      a.append("text").attr("x", d.x).attr("y", ty).attr("dy", "0.35em").attr("font-size", FS).attr("fill", INK2).text(d.label);
+    });
+
+    // --- eje X ---
+    const axisY = botZone + nBot * ROW + 12;
+    const gA = svg.append("g");
+    gA.append("line").attr("x1", x(X0)).attr("x2", x(X1)).attr("y1", axisY).attr("y2", axisY).attr("stroke", RULE).attr("stroke-width", 1.5);
+    d3.range(X0, X1 + 1).forEach(yr => {
+      gA.append("line").attr("x1", x(yr)).attr("x2", x(yr)).attr("y1", axisY).attr("y2", axisY + (yr % 2 ? 4 : 7)).attr("stroke", RULE);
+      if (yr % 2 === 0) gA.append("text").attr("x", x(yr)).attr("y", axisY + 22).attr("text-anchor", "middle").attr("font-size", 12).attr("fill", INK2).text(yr);
+    });
+    gA.append("text").attr("x", xEnd).attr("y", axisY + 22).attr("text-anchor", "middle").attr("font-size", 11).attr("fill", INK3).text(xEnd - x(2026) > 30 ? t(DATA.textos.hoy) : "");
+
+    // --- barras: centros y proyectos ---
+    let cursor = axisY + 46;
+    const BH = 20, BG = 4;
+    function bars(title, list, oneEach) {
+      svg.append("text").attr("x", x(X0)).attr("y", cursor).attr("font-size", 13).attr("font-weight", 600).attr("fill", INK).text(title);
+      cursor += 10;
+      const items = list.map(d => {
+        const a = Math.max(X0, d.desde), b = Math.min(d.hasta == null ? END : d.hasta, X1);
+        const label = t(d.nombre) + (d.url ? " ↗" : "");
+        const bx0 = x(a), bx1 = x(b);
+        const tw = textW(label, 11.5) + 14, flip = bx0 + tw > W - 6; // sin sitio a la derecha: el texto acaba en el borde de la barra
+        return { d, bx0, bx1, label, flip, x0: flip ? Math.min(bx0, bx1 - tw) : bx0, x1: flip ? bx1 : Math.max(bx1, bx0 + tw) };
+      }).sort((p, q) => p.x0 - q.x0);
+      let n; if (oneEach) { items.forEach((it, i) => it.lane = i); n = items.length; } else n = packLanes(items);
+      items.forEach(it => {
+        const yy = cursor + it.lane * (BH + BG), col = colorOf(it.d.tipo);
+        const g = it.d.url ? svg.append("a").attr("href", it.d.url).attr("target", "_blank").attr("rel", "noopener").attr("class", "bar-link") : svg.append("g");
+        g.append("rect").attr("x", it.bx0).attr("y", yy).attr("width", Math.max(3, it.bx1 - it.bx0 - 2)).attr("height", BH).attr("rx", 3).attr("fill", col).attr("fill-opacity", it.d.destacada ? 0.75 : 0.3);
+        g.append("rect").attr("x", it.bx0).attr("y", yy).attr("width", 3).attr("height", BH).attr("fill", col);
+        g.append("text").attr("x", it.flip ? it.bx1 - 8 : it.bx0 + 9).attr("text-anchor", it.flip ? "end" : "start").attr("y", yy + BH / 2).attr("dy", "0.35em").attr("font-size", 11.5).attr("font-weight", it.d.destacada ? 600 : 400).attr("fill", INK).text(it.label);
+      });
+      cursor += n * (BH + BG) + 26;
+    }
+    bars(t(DATA.textos.centros), DATA.centros);
+    bars(t(DATA.textos.proyectos), DATA.proyectos);
+    bars(t(DATA.textos.competencias), DATA.competencias, true);
+
+    svg.attr("viewBox", `0 0 ${W} ${cursor - 10}`);
+
+    // --- leyenda ---
+    const leg = d3.select("#legend"); leg.selectAll("*").remove();
+    Object.keys(DATA.grupos).forEach(gk => {
+      const g = leg.append("div").attr("class", "group");
+      g.append("span").attr("class", "gname").text(t(DATA.grupos[gk]));
+      DATA.capas.filter(c => c.grupo === gk).forEach(c => {
+        const it = g.append("span").attr("class", "item")
+          .on("mouseenter", () => highlight(c.id)).on("mouseleave", () => highlight(null));
+        it.append("span").attr("class", "sw").style("background", c.color);
+        it.append("span").text(t(c.corto));
+      });
+    });
+
+    // --- tabla ---
+    const tb = d3.select("#table"); tb.selectAll("*").remove();
+    const table = tb.append("table");
+    table.append("thead").append("tr").selectAll("th").data([DATA.textos.thCapa, DATA.textos.thGrupo, DATA.textos.thPeriodo, DATA.textos.thDesc]).join("th").text(d => t(d));
+    table.append("tbody").selectAll("tr").data(DATA.capas).join("tr").selectAll("td")
+      .data(c => [t(c.nombre), t(DATA.grupos[c.grupo]), period(c), t(c.desc)]).join("td").text(d => d);
+  }
+
+  d3.selectAll(".lang button").on("click", function () { lang = this.dataset.lang; history.replaceState(null, "", "#" + lang); render(); });
+  render();
+})();
+</script>
+</body>
+</html>
