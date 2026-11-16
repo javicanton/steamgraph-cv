@@ -1,0 +1,12 @@
+clave,es,en
+titulo,Mi trayectoria: de la sociología a la desinformación y los datos,My career so far: from sociology to disinformation and data
+subtitulo,"En qué he invertido mi tiempo profesional desde 2005: temas de investigación, docencia, práctica profesional y formación. Las anchuras son una estimación personal aproximada.","Where my professional time has gone since 2005: research topics, teaching, professional practice and training. Stream widths are a rough personal estimate."
+eje_y,Tiempo dedicado (estimación),Time spent (rough estimate)
+pie,"Javi Cantón-Correa · <a href=""https://javiercanton.com/cv/"">CV completo</a> · <a href=""https://scholar.google.com/citations?user=UH2ITjIAAAAJ&hl=es"">Google Scholar</a> · <a href=""https://orcid.org/0000-0002-8466-1679"">ORCID</a> · <a href=""https://github.com/Javicanton"">GitHub</a><br>Formato inspirado en el <a href=""https://x.com/AlliTorban/status/1490400095191379976"">career stream graph de Alli Torban</a>. Hecho con D3.","Javi Cantón-Correa · <a href=""https://javiercanton.com/cv/"">Full CV (in Spanish)</a> · <a href=""https://scholar.google.com/citations?user=UH2ITjIAAAAJ&hl=en"">Google Scholar</a> · <a href=""https://orcid.org/0000-0002-8466-1679"">ORCID</a> · <a href=""https://github.com/Javicanton"">GitHub</a><br>Format based on <a href=""https://x.com/AlliTorban/status/1490400095191379976"">Alli Torban's career stream graph</a>. Built with D3."
+grupo.investigacion,Investigación,Research
+grupo.profesional,Práctica profesional,Professional practice
+grupo.docencia,Docencia y gestión,Teaching and management
+grupo.formacion,Formación,Training
+seccion.centros,Dónde,Where
+seccion.proyectos,Proyectos de I+D y transferencia,R&D and knowledge-transfer projects
+seccion.competencias,Competencias,Skills

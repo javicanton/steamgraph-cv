@@ -66,7 +66,19 @@
   footer a:hover { color: var(--ink); }
   /* Modo incrustado (?embed=1): solo el stream graph */
   .embed .page { padding: 0; max-width: none; }
-  .embed header, .embed .legend, .embed details, .embed footer { display: none; }
+  .embed header, .embed .legend, .embed details, .embed footer, .embed .tus-datos { display: none; }
+  .aviso { background: #fbe9e4; border: 1px solid #e8b9ab; color: #7a2e1c; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin: 14px 0; }
+  .aviso:empty { display: none; }
+  .aviso ul { margin: 4px 0 0; padding-left: 18px; }
+  .tus-datos { margin-top: 20px; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+  .tus-datos h2 { font-size: 14px; color: var(--ink); margin: 0 0 4px; }
+  .tus-datos p { margin: 4px 0 8px; max-width: 760px; }
+  .tus-datos .fila { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  .tus-datos label.boton { display: inline-block; border: 1px solid var(--ink); border-radius: 999px; padding: 5px 14px; cursor: pointer; color: var(--ink); }
+  .tus-datos label.boton:hover { background: var(--ink); color: var(--surface); }
+  .tus-datos input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .tus-datos input[type=file]:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .lang[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -81,6 +93,7 @@
       <button role="tab" data-lang="en">English</button>
     </div>
   </header>
+  <div class="aviso" id="aviso" role="alert"></div>
   <div class="legend" id="legend"></div>
   <div class="scroll" id="scroll">
     <svg id="chart" role="img"></svg>
@@ -90,193 +103,179 @@
     <summary id="table-summary"></summary>
     <div id="table"></div>
   </details>
+  <section class="tus-datos" id="tus-datos">
+    <h2 id="td-titulo"></h2>
+    <p id="td-texto"></p>
+    <div class="fila">
+      <input type="file" id="td-input" accept=".csv,text/csv" multiple>
+      <label class="boton" for="td-input" id="td-boton"></label>
+      <span id="td-plantillas"></span>
+      <span id="td-estado"></span>
+    </div>
+  </section>
   <footer id="footer"></footer>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 
 <!-- ============================================================
-     DATOS. Todo lo editable está en este bloque.
-     - "valores": peso aproximado (0 a 10) por año. 10 = jornada completa.
-       Entre años se interpola; fuera de [desde, hasta] vale 0.
-     - Los años admiten decimales (2020.9 = finales de 2020).
-     - Los textos llevan versión { es, en }.
+     DATOS: se leen de los CSV de la carpeta data/ (ver README).
+     ?datos=URL carga los CSV de otra carpeta (debe permitir CORS).
      ============================================================ -->
 <script>
-const DATA = {
-  dominio: [2005, 2027],
-  hoy: 2026.87,
+const CSV_FILES = ["config", "capas", "valores", "eventos", "barras"];
 
-  textos: {
-    titulo: { es: "Mi trayectoria: de la sociología a la desinformación y los datos",
-              en: "My career so far: from sociology to disinformation and data" },
-    subtitulo: { es: "En qué he invertido mi tiempo profesional desde 2005: temas de investigación, docencia, práctica profesional y formación. Las anchuras son una estimación personal aproximada.",
-                 en: "Where my professional time has gone since 2005: research topics, teaching, professional practice and training. Stream widths are a rough personal estimate." },
-    ejeY: { es: "Tiempo dedicado (estimación)", en: "Time spent (rough estimate)" },
-    hoy: { es: "hoy", en: "today" },
-    centros: { es: "Dónde", en: "Where" },
-    proyectos: { es: "Proyectos de I+D y transferencia", en: "R&D and knowledge-transfer projects" },
-    competencias: { es: "Competencias", en: "Skills" },
-    tabla: { es: "Ver los datos en tabla", en: "View data as a table" },
-    thCapa: { es: "Capa", en: "Stream" }, thGrupo: { es: "Grupo", en: "Group" },
-    thPeriodo: { es: "Periodo", en: "Period" }, thDesc: { es: "Descripción", en: "Description" },
-    proyRel: { es: "Proyectos", en: "Projects" },
-    pie: { es: 'Javi Cantón-Correa · <a href="https://javiercanton.com/cv/">CV completo</a> · <a href="https://scholar.google.com/citations?user=UH2ITjIAAAAJ&hl=es">Google Scholar</a> · <a href="https://orcid.org/0000-0002-8466-1679">ORCID</a> · <a href="https://github.com/Javicanton">GitHub</a><br>Formato inspirado en el <a href="https://x.com/AlliTorban/status/1490400095191379976">career stream graph de Alli Torban</a>. Hecho con D3.',
-           en: 'Javi Cantón-Correa · <a href="https://javiercanton.com/cv/">Full CV (in Spanish)</a> · <a href="https://scholar.google.com/citations?user=UH2ITjIAAAAJ&hl=en">Google Scholar</a> · <a href="https://orcid.org/0000-0002-8466-1679">ORCID</a> · <a href="https://github.com/Javicanton">GitHub</a><br>Format based on <a href="https://x.com/AlliTorban/status/1490400095191379976">Alli Torban\'s career stream graph</a>. Built with D3.' }
-  },
-
-  grupos: {
-    investigacion: { es: "Investigación", en: "Research" },
-    profesional:   { es: "Práctica profesional", en: "Professional practice" },
-    docencia:      { es: "Docencia y gestión", en: "Teaching and management" },
-    formacion:     { es: "Formación", en: "Training" }
-  },
-
-  // Orden = de abajo arriba en el gráfico.
-  capas: [
-    { id: "formacion", grupo: "formacion", color: "#d4c29c",
-      nombre: { es: "Formación", en: "Training" }, corto: { es: "Formación", en: "Training" },
-      desc: { es: "Licenciaturas, másteres y cursos.", en: "Degrees, master's programmes and courses." },
-      desde: 2005, hasta: null,
-      valores: { 2005: 6, 2006: 6, 2007: 4, 2008: 0.5, 2009: 2.5, 2010: 2.5, 2011: 2, 2012: 0.3, 2014: 0.5, 2015: 1.5, 2016: 1, 2017: 0.3, 2019: 0.8, 2020: 0.8, 2021: 2, 2022: 2, 2023: 0.6, 2024: 0.25, 2026: 0.25 } },
-    { id: "tesis", grupo: "formacion", color: "#a87a2c",
-      nombre: { es: "Tesis doctoral", en: "Doctoral thesis" }, corto: { es: "Tesis", en: "Thesis" },
-      desc: { es: "Doctorado en Ciencias Sociales (UGR): la imagen de Granada en Instagram.", en: "PhD in Social Sciences (University of Granada): the image of Granada on Instagram." },
-      desde: 2014, hasta: 2019.8,
-      valores: { 2014: 1.5, 2015: 2.5, 2016: 2.5, 2017: 3, 2018: 3.5, 2019: 3 } },
-    { id: "exclusion", grupo: "investigacion", color: "#5b7f8c",
-      nombre: { es: "Exclusión social e inmigración", en: "Social exclusion and migration" }, corto: { es: "Exclusión social", en: "Social exclusion" },
-      desc: { es: "Investigador social en la UGR y PDI en la Universidad de Jaén.", en: "Social researcher at the University of Granada, then lecturer and researcher at the University of Jaén." },
-      desde: 2006.3, hasta: 2013.6,
-      valores: { 2006: 2, 2007: 6, 2008: 7, 2009: 4, 2010: 4, 2011: 3, 2012: 2.5, 2013: 1.5 } },
-    { id: "formador", grupo: "profesional", color: "#8fb3a8",
-      nombre: { es: "Formador en tecnología y comunicación", en: "Digital skills trainer, communication" }, corto: { es: "Formador TIC", en: "ICT trainer" },
-      desc: { es: "Andalucía Compromiso Digital, red.es, Euroformac y gabinete de prensa del Ayuntamiento de Caniles.", en: "Andalucía Compromiso Digital, red.es, Euroformac and the press office of Caniles town council." },
-      desde: 2014.9, hasta: 2016.1,
-      valores: { 2014: 4, 2015: 5, 2016: 4 } },
-    { id: "medialab", grupo: "profesional", color: "#3f8f84",
-      nombre: { es: "Medialab UGR", en: "Medialab UGR" }, corto: { es: "Medialab UGR", en: "Medialab UGR" },
-      desc: { es: "Comunicación audiovisual, diseño, formación e investigación. A tiempo completo, con docencia y tesis en paralelo.", en: "Audiovisual communication, design, training and research. Full time, alongside teaching and the thesis." },
-      url: "https://medialab.ugr.es",
-      desde: 2016.1, hasta: 2020.95,
-      valores: { 2016: 5, 2017: 6, 2018: 6, 2019: 6, 2020: 5.5 } },
-    { id: "rtve", grupo: "profesional", color: "#e07a3f",
-      nombre: { es: "VerificaRTVE", en: "VerificaRTVE" }, corto: { es: "RTVE", en: "RTVE" },
-      desc: { es: "Periodista de investigación y verificador en RTVE.es, a tiempo completo.", en: "Investigative journalist and fact-checker at RTVE.es, full time." },
-      url: "https://www.rtve.es/noticias/verificartve/",
-      desde: 2020.9, hasta: 2022,
-      valores: { 2020: 7, 2021: 7 } },
-    { id: "desinfo", grupo: "investigacion", color: "#c2385a",
-      nombre: { es: "Desinformación, fact-checking e IA", en: "Disinformation, fact-checking and AI" }, corto: { es: "Desinformación", en: "Disinformation" },
-      desc: { es: "De preparar materiales docentes (2018) a VerificaRTVE, IBERIFIER y MonitorIA (desinformación aplicada).", en: "From preparing course materials (2018) to VerificaRTVE, IBERIFIER and MonitorIA (applied disinformation research)." },
-      proyectos: "IBERIFIER, U-MIND, XAI-DisInfodemics, UDDOT, IBERIFIER Plus, MonitorIA",
-      desde: 2018, hasta: null,
-      valores: { 2018: 0.4, 2019: 0.9, 2020: 1.2, 2021: 1.5, 2022: 3.5, 2023: 4, 2024: 3.5, 2025: 3.8, 2026: 3.3 } },
-    { id: "manosfera", grupo: "investigacion", color: "#6d1f4f",
-      nombre: { es: "Manosfera y cibermisoginia", en: "Manosphere and cyber-misogyny" }, corto: { es: "Manosfera", en: "Manosphere" },
-      desc: { es: "Línea abierta en 2026: discursos digitales misóginos e IA generativa.", en: "Line opened in 2026: misogynistic online discourse and generative AI." },
-      desde: 2025.9, hasta: null,
-      valores: { 2026: 1.3 } },
-    { id: "dataviz", grupo: "investigacion", color: "#e2b23a",
-      nombre: { es: "Visualización de datos", en: "Data visualization" }, corto: { es: "Dataviz", en: "Dataviz" },
-      desc: { es: "Arranca en 2013 con los Talleres de Periodismo de Datos de Medialab Prado (Madrid). Después, investigación, talleres y divulgación sobre visualización, periodismo de datos y pensamiento visual.", en: "Starts in 2013 with the Data Journalism Workshops at Medialab Prado (Madrid). Then research, workshops and outreach on visualization, data journalism and visual thinking." },
-      desde: 2013, hasta: null,
-      valores: { 2013: 0.4, 2014: 0.5, 2015: 0.6, 2016: 0.8, 2017: 1.2, 2020: 1.3, 2021: 0.8, 2022: 1.2, 2023: 1, 2024: 1.2, 2025: 1.6, 2026: 2.2 } },
-    { id: "transmedia", grupo: "investigacion", color: "#8a6fb0",
-      nombre: { es: "Narrativas transmedia y cultura visual", en: "Transmedia storytelling and visual culture" }, corto: { es: "Transmedia", en: "Transmedia" },
-      desc: { es: "Grupo Nar-Trans (UGR): transmedialización, ficción y no ficción.", en: "Nar-Trans group (University of Granada): transmedia adaptation, fiction and non-fiction." },
-      proyectos: "Nar-Trans, Nar-Trans 2, FicTrans",
-      desde: 2014, hasta: null,
-      valores: { 2014: 0.5, 2015: 1, 2017: 1.2, 2019: 1, 2020: 0.8, 2021: 0.3, 2022: 0.6, 2024: 0.6, 2025: 0.4, 2026: 0.3 } },
-    { id: "docencia", grupo: "docencia", color: "#1f4e5f",
-      nombre: { es: "Docencia universitaria", en: "University teaching" }, corto: { es: "Docencia", en: "Teaching" },
-      desc: { es: "Universidad de Jaén (2009-2013), UNIR (desde 2011), UOC (desde 2020), FUdG (2020-2022), UAH (2021-2023) y UI1 (desde 2022).", en: "University of Jaén (2009-2013), UNIR (since 2011), UOC (since 2020), FUdG (2020-2022), UAH (2021-2023) and UI1 (since 2022)." },
-      desde: 2009.25, hasta: null,
-      valores: { 2009: 3, 2010: 4.5, 2011: 5, 2012: 5.5, 2013: 5, 2014: 3.5, 2015: 2, 2017: 2, 2018: 2.2, 2019: 2.5, 2020: 3, 2021: 3, 2022: 4, 2023: 4.5, 2024: 5, 2025: 4.5, 2026: 4.5 } },
-    // SUPUESTO: falta confirmar desde cuándo diriges el grado y el máster.
-    { id: "gestion", grupo: "docencia", color: "#7a8691",
-      nombre: { es: "Gestión académica", en: "Academic management" }, corto: { es: "Gestión", en: "Management" },
-      desc: { es: "Dirección del Grado en Sociología y del Máster en Métodos y Técnicas de Investigación Social Aplicada (UNIR).", en: "Director of the BA in Sociology and of the Master's in Applied Social Research Methods (UNIR)." },
-      desde: 2024, hasta: null,
-      valores: { 2024: 0.8, 2025: 1.5, 2026: 1.8 } }
-  ],
-
-  // Anotaciones bajo el gráfico (salen de la capa de formación).
-  titulos: [
-    { x: 2006.5, texto: { es: "Lic. en Sociología (UGR), 2006", en: "BA in Sociology (Granada), 2006" } },
-    { x: 2007.6, texto: { es: "Máster en Problemas Sociales y CAP, 2007", en: "Master's in Social Problems + teaching certificate, 2007" } },
-    { x: 2011.4, texto: { es: "Lic. en Comunicación Audiovisual (UGR), 2009-2011", en: "BA in Audiovisual Communication (Granada), 2009-2011" } },
-    { x: 2015.5, texto: { es: "Máster en Diseño Gráfico, 2015", en: "Master's in Graphic Design, 2015" } },
-    { x: 2019.6, capa: "tesis", texto: { es: "Doctor en Ciencias Sociales (UGR), 2019", en: "PhD in Social Sciences (Granada), 2019" }, url: "https://digibug.ugr.es/handle/10481/56491" },
-    { x: 2022.4, texto: { es: "Máster en Inteligencia Artificial (UNIR), 2021-22", en: "Master's in Artificial Intelligence (UNIR), 2021-22" } }
-  ],
-
-  // Hitos sobre el gráfico.
-  hitos: [
-    { x: 2011.75, texto: { es: "Empiezo en UNIR", en: "Joined UNIR" }, url: "https://www.unir.net/" },
-    { x: 2013.5, texto: { es: "Taller de Periodismo de Datos, Medialab Prado", en: "Data Journalism Workshop, Medialab Prado (Madrid)" } },
-    { x: 2020.3, texto: { es: "Acreditación de Ayudante Doctor", en: "Accredited as Assistant Professor (ANECA)" } },
-    { x: 2020.8, texto: { es: "Accésit ATIC a la mejor tesis en comunicación", en: "ATIC runner-up award, best communication thesis" } },
-    { x: 2024.5, texto: { es: "Acreditación a Contratado Doctor y sexenio", en: "Accredited as Associate Professor (ANECA), first research sexenio" } },
-    { x: 2025.1, texto: { es: "IP de MonitorIA", en: "PI of MonitorIA" }, url: "https://monitoria.org/" }
-  ],
-
-  // Barras bajo el eje. "tipo" toma el color de una capa.
-  centros: [
-    { nombre: { es: "Ropero (dependiente)", en: "Ropero (shop assistant)" }, desde: 2005, hasta: 2007, tipo: null },
-    { nombre: { es: "UGR (investigador social)", en: "Univ. of Granada (social researcher)" }, desde: 2007, hasta: 2009, tipo: "exclusion" },
-    { nombre: { es: "Universidad de Jaén", en: "University of Jaén" }, desde: 2009.25, hasta: 2013.25, tipo: "docencia" },
-    { nombre: "UNIR", desde: 2011.75, hasta: null, tipo: "docencia", url: "https://www.unir.net/" },
-    { nombre: "Medialab UGR", desde: 2016.1, hasta: 2020.95, tipo: "medialab", url: "https://medialab.ugr.es" },
-    { nombre: "FUdG", desde: 2020, hasta: 2023, tipo: "docencia" },
-    { nombre: "UOC", desde: 2020.67, hasta: null, tipo: "docencia", url: "https://www.uoc.edu/portal/es/index.html" },
-    { nombre: "VerificaRTVE", desde: 2020.92, hasta: 2022, tipo: "rtve", url: "https://www.rtve.es/noticias/verificartve/" },
-    { nombre: { es: "UAH (Alcalá)", en: "UAH (Alcalá)" }, desde: 2021.75, hasta: 2023.55, tipo: "docencia", url: "https://www.uah.es/es/estudios/estudios-oficiales/grados/Master-Propio-en-Periodismo-de-Datos-y-Visualizacion/#presentacion" },
-    { nombre: { es: "UGR (IBERIFIER)", en: "Granada (IBERIFIER)" }, desde: 2022.35, hasta: 2024, tipo: "desinfo", url: "https://iberifier.eu/" },
-    { nombre: "UI1", desde: 2022.67, hasta: null, tipo: "docencia", url: "https://www.ui1.es" }
-  ],
-
-  // Competencias: desde el año en que empiezas a usarlas. "destacada" la resalta.
-  competencias: [
-    { nombre: { es: "Investigación social cuantitativa y cualitativa (SPSS, ATLAS.ti)", en: "Quantitative and qualitative social research (SPSS, ATLAS.ti)" }, desde: 2006, hasta: null, tipo: null },
-    { nombre: { es: "Radio, producción audiovisual y podcast", en: "Radio, audiovisual production and podcasting" }, desde: 2006, hasta: null, tipo: null },
-    { nombre: { es: "Diseño gráfico e infografía (Adobe)", en: "Graphic design and infographics (Adobe)" }, desde: 2015, hasta: null, tipo: null },
-    { nombre: { es: "Visualización de datos (Tableau, Flourish, Datawrapper)", en: "Data visualization (Tableau, Flourish, Datawrapper)" }, desde: 2013, hasta: null, tipo: "dataviz", destacada: true },
-    { nombre: { es: "Pensamiento visual y sketchnoting", en: "Visual thinking and sketchnoting" }, desde: 2017, hasta: null, tipo: null },
-    { nombre: { es: "R y Python para análisis de datos", en: "R and Python for data analysis" }, desde: 2019, hasta: null, tipo: null },
-    { nombre: { es: "Verificación digital y OSINT", en: "Digital verification and OSINT" }, desde: 2020, hasta: null, tipo: null },
-    { nombre: { es: "IA, PLN y minería de texto", en: "AI, NLP and text mining" }, desde: 2021, hasta: null, tipo: null },
-    { nombre: { es: "Programación asistida por IA (D3, web)", en: "AI-assisted coding (D3, web)" }, desde: 2025, hasta: null, tipo: null }
-  ],
-
-  // "hasta" es exclusivo: un proyecto 2014-2017 va de 2014 a 2018.
-  proyectos: [
-    { nombre: { es: "Bienestar social e inmigración", en: "Welfare and immigration" }, desde: 2006, hasta: 2010, tipo: "exclusion" },
-    { nombre: { es: "Nueva pobreza y exclusión social", en: "New poverty and social exclusion" }, desde: 2008, hasta: 2012, tipo: "exclusion" },
-    { nombre: "Nar-Trans", desde: 2014, hasta: 2018, tipo: "transmedia", url: "https://nar-trans.com/" },
-    { nombre: "Knowmetrics", desde: 2016, hasta: 2019, tipo: "medialab" },
-    { nombre: "Nar-Trans 2", desde: 2018, hasta: 2021, tipo: "transmedia", url: "https://nar-trans.com/" },
-    { nombre: "PAgES", desde: 2018, hasta: 2023, tipo: "medialab", url: "https://pages-project.ly/en/" },
-    { nombre: "IBERIFIER", desde: 2020, hasta: 2025, tipo: "desinfo", url: "https://iberifier.eu/" },
-    { nombre: "U-MIND", desde: 2022, hasta: 2025, tipo: "desinfo" },
-    { nombre: "FicTrans", desde: 2022, hasta: 2026, tipo: "transmedia", url: "https://nar-trans.com/proyecto/" },
-    { nombre: "XAI-DisInfodemics", desde: 2024, hasta: 2025, tipo: "desinfo", url: "https://otri.ugr.es/imasd-colaborativa/gestion-proyectos/proyectos/xai-disinfodemics" },
-    { nombre: "UDDOT", desde: 2024, hasta: 2025, tipo: "desinfo", url: "https://gulbenkian.pt/emifund/projects/understanding-disinformation-dynamics-on-telegram-uddot/" },
-    { nombre: "IBERIFIER Plus", desde: 2024, hasta: 2027, tipo: "desinfo", url: "https://iberifier.eu/" },
-    { nombre: "MonitorIA", desde: 2025, hasta: 2027, tipo: "desinfo", url: "https://monitoria.org/" },
-    { nombre: { es: "Innovación audiovisual para la divulgación científica", en: "Audiovisual innovation for science communication" }, desde: 2026, hasta: 2027, tipo: "medialab" }
-  ]
+// Textos de la interfaz (no dependen de los datos).
+const UI = {
+  hoy: { es: "hoy", en: "today" },
+  tabla: { es: "Ver los datos en tabla", en: "View data as a table" },
+  thCapa: { es: "Capa", en: "Stream" }, thGrupo: { es: "Grupo", en: "Group" },
+  thPeriodo: { es: "Periodo", en: "Period" }, thDesc: { es: "Descripción", en: "Description" },
+  proyRel: { es: "Proyectos", en: "Projects" },
+  tdTitulo: { es: "Usa tus propios datos", en: "Use your own data" },
+  tdTexto: { es: "Este gráfico se dibuja a partir de cinco tablas CSV. Descarga las plantillas, edítalas en una hoja de cálculo y súbelas aquí para ver tu propio gráfico (los archivos no salen de tu navegador). Para publicarlo, haz un fork del repositorio y sustituye los CSV de la carpeta data/.",
+             en: "This chart is drawn from five CSV tables. Download the templates, edit them in a spreadsheet and upload them here to preview your own chart (files never leave your browser). To publish it, fork the repository and replace the CSV files in the data/ folder." },
+  tdBoton: { es: "Subir CSV", en: "Upload CSV" },
+  tdPlantillas: { es: "Plantillas:", en: "Templates:" },
+  tdCargados: { es: "Cargados:", en: "Loaded:" },
+  errCarga: { es: "No se han podido cargar los datos", en: "Could not load the data" },
+  errLocal: { es: "Si has abierto el archivo directamente, sírvelo con un servidor local (por ejemplo, python3 -m http.server) o publícalo en GitHub Pages.", en: "If you opened the file directly, serve it with a local server (e.g. python3 -m http.server) or publish it on GitHub Pages." },
+  avisos: { es: "Revisa los datos:", en: "Check the data:" }
 };
+
+// ---------- Lectura y validación de los CSV ----------
+const CsvData = (function () {
+  const num = v => { if (v == null) return null; v = String(v).trim().replace(",", "."); if (v === "") return null; const n = +v; return isFinite(n) ? n : null; };
+  const str = v => (v == null ? "" : String(v).trim());
+  const yes = v => /^(s[ií]|1|true|x|yes|y)$/i.test(str(v));
+  const bi = (r, k) => ({ es: str(r[k + "_es"]), en: str(r[k + "_en"]) });
+  function parse(text) {
+    text = text.replace(/^﻿/, "");
+    const first = text.split(/\r?\n/, 1)[0];
+    const sep = (first.split(";").length > first.split(",").length) ? ";" : ","; // Excel en español exporta con ";"
+    return d3.dsvFormat(sep).parse(text).map(r => { const o = {}; for (const k in r) o[k.trim().toLowerCase()] = r[k]; return o; });
+  }
+  function nowYear() { const d = new Date(), y = d.getFullYear(); return y + (d - new Date(y, 0, 1)) / (new Date(y + 1, 0, 1) - new Date(y, 0, 1)); }
+
+  function build(texts) {
+    const avisos = [];
+    const T = {}; CSV_FILES.forEach(f => T[f] = texts[f] ? parse(texts[f]) : []);
+    CSV_FILES.forEach(f => { if (!texts[f]) avisos.push(`Falta ${f}.csv`); });
+
+    const cfg = {}; T.config.forEach(r => { const k = str(r.clave); if (k) cfg[k] = { es: str(r.es), en: str(r.en) }; });
+    const cfgNum = k => cfg[k] ? num(cfg[k].es) : null;
+
+    // capas
+    const fallback = d3.schemeTableau10;
+    const capas = T.capas.filter(r => str(r.id)).map((r, i) => ({
+      id: str(r.id), grupo: str(r.grupo) || "otros", color: str(r.color) || fallback[i % fallback.length],
+      desde: num(r.desde), hasta: num(r.hasta),
+      nombre: bi(r, "nombre"), corto: bi(r, "corto"), desc: bi(r, "desc"),
+      proyectos: str(r.proyectos), url: str(r.url), valores: {}
+    }));
+    capas.forEach(c => { if (!c.corto.es) c.corto = c.nombre; if (!c.nombre.es) c.nombre = { es: c.id, en: "" }; });
+    const byId = Object.fromEntries(capas.map(c => [c.id, c]));
+
+    // valores (formato ancho: una fila por año, una columna por capa)
+    const yearCol = T.valores.length ? Object.keys(T.valores[0]).find(k => /^(año|ano|anio|year)$/.test(k)) : null;
+    if (T.valores.length && !yearCol) avisos.push("valores.csv necesita una columna «año»");
+    const desconocidas = new Set();
+    T.valores.forEach(r => {
+      const y = num(r[yearCol]); if (y == null) return;
+      for (const k in r) {
+        if (k === yearCol) continue;
+        const v = num(r[k]); if (v == null) continue;
+        if (byId[k]) byId[k].valores[y] = Math.max(0, v); else desconocidas.add(k);
+      }
+    });
+    desconocidas.forEach(k => avisos.push(`valores.csv: la columna «${k}» no coincide con ningún id de capas.csv`));
+    const vacias = capas.filter(c => !Object.keys(c.valores).length);
+    vacias.forEach(c => avisos.push(`La capa «${c.id}» no tiene valores en valores.csv`));
+    const capasOk = capas.filter(c => Object.keys(c.valores).length);
+    capasOk.forEach(c => { if (c.desde == null) c.desde = d3.min(Object.keys(c.valores), Number); });
+
+    // grupos de la leyenda: primero en el orden de config.csv, luego el resto en orden de aparición
+    const usados = new Set(capasOk.map(c => c.grupo)), grupos = {};
+    Object.keys(cfg).filter(k => k.startsWith("grupo.") && usados.has(k.slice(6))).forEach(k => grupos[k.slice(6)] = cfg[k]);
+    capasOk.forEach(c => { if (!grupos[c.grupo]) grupos[c.grupo] = { es: c.grupo, en: "" }; });
+
+    // eventos
+    const ev = T.eventos.map(r => ({ tipo: str(r.tipo).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""), x: num(r["año"] ?? r.ano ?? r.anio ?? r.year), texto: bi(r, "texto"), url: str(r.url), capa: str(r.capa) || undefined }))
+      .filter(e => e.x != null && e.texto.es);
+    ev.forEach(e => { if (e.capa && !byId[e.capa]) { avisos.push(`eventos.csv: capa «${e.capa}» desconocida`); e.capa = undefined; } });
+
+    // barras, agrupadas por sección en orden de aparición
+    const secciones = [];
+    T.barras.forEach(r => {
+      const sec = str(r.seccion || r["sección"]); const d = { nombre: bi(r, "nombre"), desde: num(r.desde), hasta: num(r.hasta), tipo: str(r.capa) || null, url: str(r.url), destacada: yes(r.destacada) };
+      if (!sec || !d.nombre.es || d.desde == null) return;
+      if (d.tipo && !byId[d.tipo]) { avisos.push(`barras.csv: capa «${d.tipo}» desconocida`); d.tipo = null; }
+      let s = secciones.find(x => x.id === sec);
+      if (!s) secciones.push(s = { id: sec, titulo: cfg["seccion." + sec] || { es: sec, en: "" }, items: [] });
+      s.items.push(d);
+    });
+
+    const hoy = cfgNum("hoy") ?? nowYear();
+    const minYear = d3.min([...capasOk.map(c => c.desde), ...secciones.flatMap(s => s.items.map(d => d.desde))]);
+    const X0 = cfgNum("inicio") ?? Math.floor(minYear ?? hoy - 10);
+    const X1 = cfgNum("fin") ?? Math.ceil(hoy + 0.001);
+    const txt = k => cfg[k] || { es: "", en: "" };
+    const bilingue = [txt("titulo"), ...capasOk.map(c => c.nombre)].some(o => o.en);
+
+    return {
+      avisos, bilingue,
+      DATA: {
+        dominio: [X0, X1], hoy: Math.min(hoy, X1),
+        textos: { ...UI, titulo: txt("titulo"), subtitulo: txt("subtitulo"), ejeY: txt("eje_y"), pie: txt("pie") },
+        grupos, capas: capasOk,
+        hitos: ev.filter(e => e.tipo === "hito"), titulos: ev.filter(e => e.tipo === "titulo"),
+        secciones
+      }
+    };
+  }
+
+  async function fetchAll(base) {
+    const out = {};
+    await Promise.all(CSV_FILES.map(async f => {
+      const r = await fetch(base + f + ".csv", { cache: "no-cache" });
+      if (!r.ok) throw new Error(`${f}.csv: HTTP ${r.status}`);
+      out[f] = await r.text();
+    }));
+    return out;
+  }
+  return { build, fetchAll };
+})();
 </script>
 
 <script>
-(function () {
+const params = new URLSearchParams(location.search);
+const EMBED = params.has("embed"); // ?embed=1 muestra solo el stream graph (sin título, leyenda ni barras)
+if (EMBED) document.documentElement.classList.add("embed");
+let lang = (location.hash.replace("#", "") === "en" || params.get("lang") === "en") ? "en" : "es";
+
+// Seguridad: los CSV pueden venir de fuera (?datos=), así que se escapa el texto y se filtran los enlaces.
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const safeUrl = u => (u && /^(https?:\/\/|mailto:|\.{0,2}\/|#)/i.test(u.trim())) ? u.trim() : "";
+function safeHtml(html) { // solo texto, <a href> y <br>
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html"), out = document.createElement("div");
+  (function walk(src, dst) {
+    src.childNodes.forEach(n => {
+      if (n.nodeType === 3) dst.appendChild(document.createTextNode(n.textContent));
+      else if (n.nodeName === "BR") dst.appendChild(document.createElement("br"));
+      else if (n.nodeName === "A") { const a = document.createElement("a"); const h = safeUrl(n.getAttribute("href")); if (h) a.href = h; walk(n, a); dst.appendChild(a); }
+      else if (n.nodeType === 1 && !/^(SCRIPT|STYLE|TEMPLATE)$/.test(n.nodeName)) walk(n, dst);
+    });
+  })(doc.body.firstChild, out);
+  return out.innerHTML;
+}
+
+function start(DATA, bilingue) {
+  if (!bilingue) lang = "es";
+  d3.select(".lang").attr("hidden", bilingue ? null : "");
+  DATA.capas.forEach(c => c.url = safeUrl(c.url));
+  [...DATA.hitos, ...DATA.titulos, ...DATA.secciones.flatMap(s => s.items)].forEach(d => d.url = safeUrl(d.url));
   const SURFACE = "#f7f3ea", INK = "#2b2a28", INK2 = "#5d5a54", INK3 = "#8c877d", RULE = "#d9d2c2", NEUTRAL = "#9a958a";
-  const params = new URLSearchParams(location.search);
-  const EMBED = params.has("embed"); // ?embed=1 muestra solo el stream graph (sin título, leyenda ni barras)
-  if (EMBED) document.documentElement.classList.add("embed");
-  let lang = (location.hash.replace("#", "") === "en" || params.get("lang") === "en") ? "en" : "es";
-  const t = o => (o == null ? "" : (typeof o === "string" ? o : (o[lang] ?? o.es)));
+  const t = o => (o == null ? "" : (typeof o === "string" ? o : (o[lang] || o.es || "")));
   const byId = Object.fromEntries(DATA.capas.map(c => [c.id, c]));
   const colorOf = id => (id && byId[id]) ? byId[id].color : NEUTRAL;
 
@@ -354,7 +353,10 @@ const DATA = {
     d3.select("#title").text(t(DATA.textos.titulo));
     d3.select("#subtitle").text(t(DATA.textos.subtitulo));
     d3.selectAll(".lang button").attr("aria-selected", function () { return this.dataset.lang === lang; });
-    d3.select("#footer").html(t(DATA.textos.pie));
+    d3.select("#footer").html(safeHtml(t(DATA.textos.pie)));
+    d3.select("#td-titulo").text(t(UI.tdTitulo)); d3.select("#td-texto").text(t(UI.tdTexto));
+    d3.select("#td-boton").text(t(UI.tdBoton));
+    d3.select("#td-plantillas").html(esc(t(UI.tdPlantillas)) + " " + CSV_FILES.map(f => `<a href="data/${f}.csv" download>${f}.csv</a>`).join(" · "));
     d3.select("#table-summary").text(t(DATA.textos.tabla));
 
     const W = 1280, M = { l: 30, r: 210 };
@@ -395,9 +397,9 @@ const DATA = {
     }
     function showTip(ev, c) {
       const yr = Math.floor(x.invert(d3.pointer(ev, svg.node())[0]));
-      tip.html(`<div class="tt-title"><span class="tt-sw" style="background:${c.color}"></span>${t(c.nombre)}</div>
-        <div class="tt-meta">${t(DATA.grupos[c.grupo])} · ${period(c)}</div>
-        <div>${t(c.desc)}</div>${c.proyectos ? `<div class="tt-proj">${t(DATA.textos.proyRel)}: ${c.proyectos}</div>` : ""}`);
+      tip.html(`<div class="tt-title"><span class="tt-sw" style="background:${esc(c.color)}"></span>${esc(t(c.nombre))}</div>
+        <div class="tt-meta">${esc(t(DATA.grupos[c.grupo]))} · ${esc(period(c))}</div>
+        ${t(c.desc) ? `<div>${esc(t(c.desc))}</div>` : ""}${c.proyectos ? `<div class="tt-proj">${esc(t(DATA.textos.proyRel))}: ${esc(c.proyectos)}</div>` : ""}`);
       const r = scroll.getBoundingClientRect();
       let left = ev.clientX - r.left + scroll.scrollLeft + 14, top = ev.clientY - r.top + 14;
       const tw = tip.node().offsetWidth;
@@ -477,12 +479,12 @@ const DATA = {
       gA.append("line").attr("x1", x(yr)).attr("x2", x(yr)).attr("y1", axisY).attr("y2", axisY + (yr % 2 ? 4 : 7)).attr("stroke", RULE);
       if (yr % 2 === 0) gA.append("text").attr("x", x(yr)).attr("y", axisY + 22).attr("text-anchor", "middle").attr("font-size", 12).attr("fill", INK2).text(yr);
     });
-    gA.append("text").attr("x", xEnd).attr("y", axisY + 22).attr("text-anchor", "middle").attr("font-size", 11).attr("fill", INK3).text(xEnd - x(2026) > 30 ? t(DATA.textos.hoy) : "");
+    gA.append("text").attr("x", xEnd).attr("y", axisY + 22).attr("text-anchor", "middle").attr("font-size", 11).attr("fill", INK3).text(xEnd - x(Math.floor(END)) > 30 ? t(DATA.textos.hoy) : "");
 
     // --- barras: centros y proyectos ---
     let cursor = axisY + 46;
     const BH = 20, BG = 4;
-    function bars(title, list, oneEach) {
+    function bars(title, list) {
       svg.append("text").attr("x", x(X0)).attr("y", cursor).attr("font-size", 13).attr("font-weight", 600).attr("fill", INK).text(title);
       cursor += 10;
       const items = list.map(d => {
@@ -492,7 +494,7 @@ const DATA = {
         const tw = textW(label, 11.5) + 14, flip = bx0 + tw > W - 6; // sin sitio a la derecha: el texto acaba en el borde de la barra
         return { d, bx0, bx1, label, flip, x0: flip ? Math.min(bx0, bx1 - tw) : bx0, x1: flip ? bx1 : Math.max(bx1, bx0 + tw) };
       }).sort((p, q) => p.x0 - q.x0);
-      let n; if (oneEach) { items.forEach((it, i) => it.lane = i); n = items.length; } else n = packLanes(items);
+      const n = packLanes(items);
       items.forEach(it => {
         const yy = cursor + it.lane * (BH + BG), col = colorOf(it.d.tipo);
         const g = it.d.url ? svg.append("a").attr("href", it.d.url).attr("target", "_blank").attr("rel", "noopener").attr("class", "bar-link") : svg.append("g");
@@ -502,11 +504,7 @@ const DATA = {
       });
       cursor += n * (BH + BG) + 26;
     }
-    if (!EMBED) {
-      bars(t(DATA.textos.centros), DATA.centros);
-      bars(t(DATA.textos.proyectos), DATA.proyectos);
-      bars(t(DATA.textos.competencias), DATA.competencias, true);
-    }
+    if (!EMBED) DATA.secciones.forEach(s => bars(t(s.titulo), s.items));
     svg.attr("viewBox", `0 0 ${W} ${EMBED ? axisY + 34 : cursor - 10}`);
 
     // --- leyenda ---
@@ -532,6 +530,31 @@ const DATA = {
 
   d3.selectAll(".lang button").on("click", function () { lang = this.dataset.lang; history.replaceState(null, "", "#" + lang); render(); });
   render();
+}
+
+// ---------- Arranque: CSV de data/ (o de ?datos=) y subida de archivos propios ----------
+(function () {
+  const BASE = (params.get("datos") || "data").replace(/\/?$/, "/");
+  const aviso = d3.select("#aviso");
+  let loaded = {};
+  function show(texts) {
+    const { DATA, avisos, bilingue } = CsvData.build(texts);
+    aviso.html(avisos.length ? `${esc(UI.avisos[lang])}<ul>${avisos.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : "");
+    if (!DATA.capas.length) return;
+    start(DATA, bilingue);
+  }
+  CsvData.fetchAll(BASE).then(texts => { loaded = texts; show(texts); })
+    .catch(err => aviso.html(`<strong>${esc(UI.errCarga[lang])}</strong> (${esc(err.message)}). ${location.protocol === "file:" ? esc(UI.errLocal[lang]) : ""}`));
+
+  d3.select("#td-input").on("change", async function () {
+    const files = [...this.files], nuevos = {};
+    for (const f of files) { const k = f.name.toLowerCase().replace(/\.csv$/, "").replace(/\s*\(\d+\)$/, ""); if (CSV_FILES.includes(k)) nuevos[k] = await f.text(); }
+    const nombres = Object.keys(nuevos);
+    d3.select("#td-estado").text(nombres.length ? `${UI.tdCargados[lang]} ${nombres.map(n => n + ".csv").join(", ")}` : "—");
+    if (!nombres.length) return;
+    loaded = { ...loaded, ...nuevos }; // los archivos que no subas se toman del gráfico actual
+    show(loaded);
+  });
 })();
 </script>
 </body>
